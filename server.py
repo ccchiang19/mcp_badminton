@@ -2,6 +2,7 @@ import json
 import csv
 import pandas as pd
 import matplotlib.pyplot as plt
+from typing import List, Any, Union
 import io
 import base64
 from fastmcp import FastMCP
@@ -21,33 +22,44 @@ def price_evaluation(score: int) -> str:
     return f"BAddddddddd!"
 
 # --- Tool: 只負責收 JSON 並畫圖 ---
-@mcp.tool
-def plot_from_json(data_list: List[dict], fruit_name: str) -> Image:
-    # 這裡直接收 List[dict]，讓 Pydantic 幫你做型別檢查
+@mcp.tool()
+def plot_from_json(data_list: List[dict], fruit_name: str) -> Any:
+    """
+    接收 JSON 列表與水果名稱，畫出走勢圖。
+    """
+    # 1. 轉換為 DataFrame
     df = pd.DataFrame(data_list)
     
-    # 確保資料型別正確
+    # 2. 強制轉換型別 (避免 JSON 進來全是字串的問題)
     df['price'] = pd.to_numeric(df['price'], errors='coerce')
     df['date'] = pd.to_datetime(df['date'])
     
-    # 3. 篩選與繪圖
-    target = fruit_name.capitalize()
+    # 3. 篩選資料
+    target = fruit_name.strip().capitalize()
     fruit_df = df[df['item'] == target].sort_values('date')
     
+    # --- 重要修正：錯誤時不要只回傳字串，或確保型別一致 ---
     if fruit_df.empty:
-        return f"找不到 {target} 的資料"
+        # 回傳一個能讓 AI 理解的錯誤訊息物件
+        return f"Error: 找不到水果 '{target}' 的相關資料，請檢查輸入名稱是否正確。"
 
+    # 4. 繪圖
     plt.figure(figsize=(10, 5))
-    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', label=target)
-    plt.title(f"{target} Price Trend")
-    plt.grid(True)
+    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', linestyle='-', color='orange', label=target)
+    plt.title(f"{target} Price Trend (Past 30 Days)")
+    plt.xlabel("Date")
+    plt.ylabel("Price")
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.xticks(rotation=45)
     plt.tight_layout()
 
+    # 5. 轉為二進位流
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     plt.close()
     buf.seek(0)
     
+    # --- 關鍵點：確保回傳的是 FastMCP 的 Image 物件 ---
     return Image(data=buf.read(), format="png")
 
 
