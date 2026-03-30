@@ -14,7 +14,7 @@ def price_evaluation(score: int) -> str:
         return f"Good jobbbbbbbbb"
     return f"BAddddddddd!"
 
-@mcp.resource("files:///{filename}")
+@mcp.resource("files://{filename}")
 def get_fruit_info(filename: str) -> str:
     filepath = f"./{filename}"
     
