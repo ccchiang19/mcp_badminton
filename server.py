@@ -1,6 +1,12 @@
-from fastmcp import FastMCP
 import json
 import csv
+import pandas as pd
+import matplotlib.pyplot as plt
+import io
+import base64
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image # 確保匯入 Image
+from typing import List, Any # 記得匯入型別
 
 mcp = FastMCP("My MCP Server")
 
@@ -13,6 +19,37 @@ def price_evaluation(score: int) -> str:
     if score < 50:
         return f"Good jobbbbbbbbb"
     return f"BAddddddddd!"
+
+# --- Tool: 只負責收 JSON 並畫圖 ---
+@mcp.tool
+def plot_from_json(data_list: List[dict], fruit_name: str) -> Image:
+    # 這裡直接收 List[dict]，讓 Pydantic 幫你做型別檢查
+    df = pd.DataFrame(data_list)
+    
+    # 確保資料型別正確
+    df['price'] = pd.to_numeric(df['price'], errors='coerce')
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # 3. 篩選與繪圖
+    target = fruit_name.capitalize()
+    fruit_df = df[df['item'] == target].sort_values('date')
+    
+    if fruit_df.empty:
+        return f"找不到 {target} 的資料"
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', label=target)
+    plt.title(f"{target} Price Trend")
+    plt.grid(True)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close()
+    buf.seek(0)
+    
+    return Image(data=buf.read(), format="png")
+
 
 @mcp.resource("files://{filename}")
 def get_fruit_by_filename(filename: str) -> str:
@@ -56,6 +93,19 @@ def get_static_fruit_config() -> str:
     except FileNotFoundError:
         return json.dumps({"error": "File not found"})
 
+@mcp.resource("data://inventory")
+def get_fruit_data() -> str:
+    filepath = "./fruit_price.csv"
+    import csv
+    data = []
+    try:
+        with open(filepath, mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                data.append(row)
+        return json.dumps(data)
+    except FileNotFoundError:
+        return json.dumps([])
 
 if __name__ == "__main__":
     mcp.run(transport="http", port=8000)
