@@ -23,54 +23,32 @@ def price_evaluation(score: int) -> str:
 
 # --- Tool: 只負責收 JSON 並畫圖 ---
 @mcp.tool()
-def plot_from_json(data_list: List[dict], fruit_name: str) -> Any:
+def plot_from_json(data_list: list, fruit_name: str) -> Image:
     """
-    接收 JSON 列表與水果名稱，畫出走勢圖。
+    接收資料並生成圖片，存為實體檔案後透過 FastMCP Image 回傳。
     """
-    # 1. 轉換為 DataFrame
     df = pd.DataFrame(data_list)
-    
-    # 2. 強制轉換型別 (避免 JSON 進來全是字串的問題)
     df['price'] = pd.to_numeric(df['price'], errors='coerce')
     df['date'] = pd.to_datetime(df['date'])
     
-    # 3. 篩選資料
     target = fruit_name.strip().capitalize()
     fruit_df = df[df['item'] == target].sort_values('date')
     
-    # --- 重要修正：錯誤時不要只回傳字串，或確保型別一致 ---
-    if fruit_df.empty:
-        # 回傳一個能讓 AI 理解的錯誤訊息物件
-        return f"Error: 找不到水果 '{target}' 的相關資料，請檢查輸入名稱是否正確。"
-
-    # 4. 繪圖
-    plt.figure(figsize=(10, 5))
-    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', linestyle='-', color='orange', label=target)
-    plt.title(f"{target} Price Trend (Past 30 Days)")
-    plt.xlabel("Date")
-    plt.ylabel("Price")
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-
-    # 5. 轉為二進位流
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close()
-    buf.seek(0)
+    # 1. 先把圖畫出來並存成暫存檔
+    temp_filename = f"temp_{target.lower()}.png"
     
-    # --- 關鍵點：確保回傳的是 FastMCP 的 Image 物件 ---
-    return Image(data=buf.read(), format="png")
+    plt.figure(figsize=(10, 5))
+    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='green')
+    plt.title(f"{target} Price Trend")
+    plt.tight_layout()
+    
+    # 儲存到硬碟
+    plt.savefig(temp_filename)
+    plt.close()
 
-@mcp.tool
-def get_chart() -> Image:
-    """Generate a chart image."""
-    return Image(path="chart.png")
-
-@mcp.tool
-def get_multiple_charts() -> list[Image]:
-    """Return multiple charts."""
-    return [Image(path="chart1.png"), Image(path="chart2.png")]
+    # 2. 依照官網寫法，回傳 Image 物件並指定 path
+    # FastMCP 會自動讀取這個路徑並轉換成 UI 能識別的格式
+    return Image(path=temp_filename)
 
 @mcp.resource("files://{filename}")
 def get_fruit_by_filename(filename: str) -> str:
