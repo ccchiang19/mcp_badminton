@@ -22,8 +22,8 @@ def price_evaluation(score: int) -> str:
     return f"BAddddddddd!"
 
 @mcp.tool()
-def plot_from_json(data_list: List[dict], fruit_name: str) -> Any:
-    # 1. 資料處理
+def plot_from_json(data_list: List[dict], fruit_name: str) -> Image:
+    # 1. 繪圖邏輯 (保持不變，不寫入硬碟)
     df = pd.DataFrame(data_list)
     df['price'] = pd.to_numeric(df['price'], errors='coerce')
     df['date'] = pd.to_datetime(df['date'])
@@ -32,31 +32,22 @@ def plot_from_json(data_list: List[dict], fruit_name: str) -> Any:
     fruit_df = df[df['item'] == target].sort_values('date')
     
     if fruit_df.empty:
-        return f"Error: 找不到水果 '{target}' 的資料。"
+        # 如果失敗，回傳一個明確的錯誤 (FastMCP 會處理字串)
+        return f"Error: No data for {target}"
 
-    # 2. 繪圖 (在記憶體中完成)
     plt.figure(figsize=(10, 5))
-    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='orange')
+    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='#2ca02c')
     plt.title(f"{target} Price Trend")
     plt.tight_layout()
 
-    # 3. 關鍵：將圖片轉為 Base64 字串
+    # 2. 將圖片存入記憶體
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     plt.close()
-    image_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-    # 4. 繞過所有 FastMCP 物件，直接回傳符合 MCP 標準的 Dict
-    # 這能確保即使環境是 Read-only，圖片也能透過文字串流傳出去
-    return {
-        "content": [
-            {
-                "type": "image",
-                "data": image_base64,
-                "mimeType": "image/png"
-            }
-        ]
-    }
+    
+    # 3. 核心修正：直接回傳 Image 物件，並將二進位資料丟進去
+    # 不要自己做 base64.encode，讓 Image 類別幫你做
+    return Image(data=buf.getvalue(), format="png")
 
 
 
