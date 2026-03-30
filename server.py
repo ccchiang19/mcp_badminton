@@ -62,6 +62,15 @@ def plot_from_json(data_list: List[dict], fruit_name: str) -> Any:
     # --- 關鍵點：確保回傳的是 FastMCP 的 Image 物件 ---
     return Image(data=buf.read(), format="png")
 
+@mcp.tool
+def get_chart() -> Image:
+    """Generate a chart image."""
+    return Image(path="chart.png")
+
+@mcp.tool
+def get_multiple_charts() -> list[Image]:
+    """Return multiple charts."""
+    return [Image(path="chart1.png"), Image(path="chart2.png")]
 
 @mcp.resource("files://{filename}")
 def get_fruit_by_filename(filename: str) -> str:
