@@ -59,4 +59,4 @@ def analyze_data_prompt(filename: str) -> str:
 
 if __name__ == "__main__":
     # mcp.run()
-    mcp.run_run(transport="http",port=8000)
+    mcp.run(transport="http",port=8000)
