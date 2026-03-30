@@ -1,4 +1,0 @@
-Apples, 50
-Bananas, 80
-Cherries, 30
-Dates, 65
