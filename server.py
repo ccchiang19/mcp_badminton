@@ -21,12 +21,9 @@ def price_evaluation(score: int) -> str:
         return f"Good jobbbbbbbbb"
     return f"BAddddddddd!"
 
-# --- Tool: 只負責收 JSON 並畫圖 ---
 @mcp.tool()
-def plot_from_json(data_list: list, fruit_name: str) -> Image:
-    """
-    接收資料並生成圖片，存為實體檔案後透過 FastMCP Image 回傳。
-    """
+def plot_from_json(data_list: List[dict], fruit_name: str) -> Any:
+    # 1. 資料處理
     df = pd.DataFrame(data_list)
     df['price'] = pd.to_numeric(df['price'], errors='coerce')
     df['date'] = pd.to_datetime(df['date'])
@@ -34,21 +31,34 @@ def plot_from_json(data_list: list, fruit_name: str) -> Image:
     target = fruit_name.strip().capitalize()
     fruit_df = df[df['item'] == target].sort_values('date')
     
-    # 1. 先把圖畫出來並存成暫存檔
-    temp_filename = f"temp_{target.lower()}.png"
-    
+    if fruit_df.empty:
+        return f"Error: 找不到水果 '{target}' 的資料。"
+
+    # 2. 繪圖 (在記憶體中完成)
     plt.figure(figsize=(10, 5))
-    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='green')
+    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='orange')
     plt.title(f"{target} Price Trend")
     plt.tight_layout()
-    
-    # 儲存到硬碟
-    plt.savefig(temp_filename)
-    plt.close()
 
-    # 2. 依照官網寫法，回傳 Image 物件並指定 path
-    # FastMCP 會自動讀取這個路徑並轉換成 UI 能識別的格式
-    return Image(path=temp_filename)
+    # 3. 關鍵：將圖片轉為 Base64 字串
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close()
+    image_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    # 4. 繞過所有 FastMCP 物件，直接回傳符合 MCP 標準的 Dict
+    # 這能確保即使環境是 Read-only，圖片也能透過文字串流傳出去
+    return {
+        "content": [
+            {
+                "type": "image",
+                "data": image_base64,
+                "mimeType": "image/png"
+            }
+        ]
+    }
+
+
 
 @mcp.resource("files://{filename}")
 def get_fruit_by_filename(filename: str) -> str:
