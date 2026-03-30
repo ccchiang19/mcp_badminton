@@ -22,8 +22,8 @@ def price_evaluation(score: int) -> str:
     return f"BAddddddddd!"
 
 @mcp.tool()
-def plot_from_json(data_list: List[dict], fruit_name: str) -> Image:
-    # 1. 繪圖邏輯 (保持不變，不寫入硬碟)
+def plot_from_json(data_list: list, fruit_name: str) -> Image:
+    # --- 資料處理 ---
     df = pd.DataFrame(data_list)
     df['price'] = pd.to_numeric(df['price'], errors='coerce')
     df['date'] = pd.to_datetime(df['date'])
@@ -32,21 +32,22 @@ def plot_from_json(data_list: List[dict], fruit_name: str) -> Image:
     fruit_df = df[df['item'] == target].sort_values('date')
     
     if fruit_df.empty:
-        # 如果失敗，回傳一個明確的錯誤 (FastMCP 會處理字串)
-        return f"Error: No data for {target}"
+        # 讓程式直接報錯，FastMCP 會捕捉並回傳錯誤訊息給 AI
+        raise ValueError(f"找不到 {target} 的資料")
 
+    # --- 繪圖 ---
     plt.figure(figsize=(10, 5))
-    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='#2ca02c')
+    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='purple')
     plt.title(f"{target} Price Trend")
     plt.tight_layout()
 
-    # 2. 將圖片存入記憶體
+    # 2. 存入記憶體 (避開 Read-only 錯誤)
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     plt.close()
-    
-    # 3. 核心修正：直接回傳 Image 物件，並將二進位資料丟進去
-    # 不要自己做 base64.encode，讓 Image 類別幫你做
+
+    # 3. 官方終極解法：傳入 bytes 資料與 format
+    # FastMCP 會負責把 bytes 轉成 Base64，並正確貼上 mimeType 標籤！
     return Image(data=buf.getvalue(), format="png")
 
 
