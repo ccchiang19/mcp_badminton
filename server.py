@@ -1,67 +1,69 @@
 import json
+import csv
 import pandas as pd
 import io
 from fastmcp import FastMCP
 
-mcp = FastMCP("Advanced Pipeline Server")
+mcp = FastMCP("Secure Fruit Server")
 
-# 模擬一個簡單的資料庫/快取
-DATA_STORE = {
+# 內部狀態儲存（外部無法直接存取）
+_INTERNAL_STORAGE = {
     "raw_data": None,
-    "analysis_result": None
+    "analysis_report": None
 }
 
-# --- Tool A: 負責讀取資料 ---
+# --- 1. 改良後的 Tool A: 讀取資料 (取代 Resource) ---
 @mcp.tool()
-def load_data_from_file(filename: str) -> str:
-    """[Tool A] 讀取本地檔案並存入系統快取。"""
+def fetch_inventory_data(filename: str = "fruit_price.csv") -> str:
+    """
+    [安全讀取] 只有在需要時才從本地檔案載入庫存資料。
+    這不會預先顯示在 Resource 列表中。
+    """
+    data = []
     try:
-        df = pd.read_csv(f"./{filename}")
-        # 將資料存入全域變數，方便其他工具使用
-        DATA_STORE["raw_data"] = df.to_dict(orient="records")
-        return f"成功讀取 {len(df)} 筆資料，已載入系統。"
-    except Exception as e:
-        return f"讀取失敗: {str(e)}"
+        with open(f"./{filename}", mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                data.append(row)
+        
+        # 存入內部暫存，不直接噴出所有內容給使用者看
+        _INTERNAL_STORAGE["raw_data"] = data
+        
+        # 只回傳摘要，保護隱私
+        return f"成功讀取 {len(data)} 筆資料。資料已載入安全緩衝區，請執行分析工具以查看結果。"
+    except FileNotFoundError:
+        return "錯誤：找不到指定的資料檔案。"
 
-# --- Tool B: 負責分析資料 ---
+# --- 2. Tool B: 分析並產生報表 ---
 @mcp.tool()
-def analyze_current_data() -> str:
-    """[Tool B] 分析目前載入的資料，並準備 UI 內容。"""
-    if DATA_STORE["raw_data"] is None:
-        return "錯誤：尚未載入任何資料，請先執行 load_data_from_file。"
+def generate_analysis_report() -> str:
+    """
+    [分析工具] 針對已載入的資料進行統計。
+    """
+    raw = _INTERNAL_STORAGE["raw_data"]
+    if not raw:
+        return "請先執行 fetch_inventory_data 載入資料。"
     
-    df = pd.DataFrame(DATA_STORE["raw_data"])
-    # 進行一些簡單分析
-    summary = {
-        "total_items": len(df),
-        "avg_price": df['price'].astype(float).mean(),
-        "max_price": df['price'].astype(float).max()
-    }
-    # 將分析後的結果存起來給 Resource 使用
-    DATA_STORE["analysis_result"] = summary
-    return "分析完成！你可以查看 ui://dashboard 資源來獲取報表。"
+    df = pd.DataFrame(raw)
+    df['price'] = pd.to_numeric(df['price'], errors='coerce')
+    
+    avg_p = df['price'].mean()
+    
+    # 產生分析結果存入狀態
+    report = f"### 庫存分析報表\n- 總品項: {len(df)}\n- 平均單價: {avg_p:.2f}"
+    _INTERNAL_STORAGE["analysis_report"] = report
+    
+    return "分析完成！報表已準備好。"
 
-# --- Resource: 負責輸出 UI 內容 ---
-@mcp.resource("ui://dashboard")
-def get_analysis_dashboard() -> str:
-    """[Resource] 輸出最終的分析 UI（Markdown 格式）。"""
-    res = DATA_STORE["analysis_result"]
-    
-    if res is None:
-        return "# 儀表板\n目前沒有可顯示的分析數據。請 AI 先執行分析工具。"
-    
-    # 這裡我們用 Markdown 做出一個漂亮的 UI 效果
-    ui_output = f"""
-# 🍎 水果數據分析摘要
----
-* **總品項數量**: {res['total_items']}
-* **平均價格**: ${res['avg_price']:.2f}
-* **最高單價**: ${res['max_price']:.2f}
-
-> 提示：此數據由 Tool B 自動生成，僅供參考。
-"""
-    return ui_output
+# --- 3. 唯一的 Resource: 最終輸出 UI ---
+# 注意：這裡我們只留一個「結果出口」，且沒資料時它什麼都不顯示
+@mcp.resource("ui://final-report")
+def show_report() -> str:
+    """顯示最終經過處理的分析報表。"""
+    report = _INTERNAL_STORAGE["analysis_report"]
+    if not report:
+        return "目前沒有已產生的報表。請先要求 AI 執行分析工具。"
+    return report
 
 if __name__ == "__main__":
-    # 建議開發時先用 stdio，接入 Claude 較方便；若要用 Inspector 測試 port 也行
     mcp.run()
