@@ -1,112 +1,67 @@
 import json
-import csv
 import pandas as pd
-import matplotlib.pyplot as plt
-from typing import List, Any, Union
 import io
-import base64
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image # 確保匯入 Image
-from typing import List, Any # 記得匯入型別
 
-mcp = FastMCP("My MCP Server")
+mcp = FastMCP("Advanced Pipeline Server")
 
-@mcp.tool
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
+# 模擬一個簡單的資料庫/快取
+DATA_STORE = {
+    "raw_data": None,
+    "analysis_result": None
+}
 
-@mcp.tool
-def price_evaluation(score: int) -> str:
-    if score < 50:
-        return f"Good jobbbbbbbbb"
-    return f"BAddddddddd!"
-
+# --- Tool A: 負責讀取資料 ---
 @mcp.tool()
-def plot_from_json(data_list: list, fruit_name: str) -> Image:
-    # --- 資料處理 ---
-    df = pd.DataFrame(data_list)
-    df['price'] = pd.to_numeric(df['price'], errors='coerce')
-    df['date'] = pd.to_datetime(df['date'])
-    
-    target = fruit_name.strip().capitalize()
-    fruit_df = df[df['item'] == target].sort_values('date')
-    
-    if fruit_df.empty:
-        # 讓程式直接報錯，FastMCP 會捕捉並回傳錯誤訊息給 AI
-        raise ValueError(f"找不到 {target} 的資料")
-
-    # --- 繪圖 ---
-    plt.figure(figsize=(10, 5))
-    plt.plot(fruit_df['date'], fruit_df['price'], marker='o', color='purple')
-    plt.title(f"{target} Price Trend")
-    plt.tight_layout()
-
-    # 2. 存入記憶體 (避開 Read-only 錯誤)
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close()
-
-    # 3. 官方終極解法：傳入 bytes 資料與 format
-    # FastMCP 會負責把 bytes 轉成 Base64，並正確貼上 mimeType 標籤！
-    return Image(data=buf.getvalue(), format="png")
-
-
-
-@mcp.resource("files://{filename}")
-def get_fruit_by_filename(filename: str) -> str:
-    filepath = f"./{filename}"
-    
-    fruit_data = {}
-    
+def load_data_from_file(filename: str) -> str:
+    """[Tool A] 讀取本地檔案並存入系統快取。"""
     try:
-        with open(filepath, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # row 會像是 {'item': 'Apples', 'price': '50'}
-                # 我們把它存進一個字典方便查詢
-                fruit_data[row['item'].strip()] = row['price'].strip()
-        
-        # 這裡你可以決定要回傳「全部資料」還是「特定邏輯」
-        # 如果是回傳整份 JSON：
-        return json.dumps(fruit_data, indent=4)
-        
-    except FileNotFoundError:
-        return json.dumps({"error": "File not found"})
+        df = pd.read_csv(f"./{filename}")
+        # 將資料存入全域變數，方便其他工具使用
+        DATA_STORE["raw_data"] = df.to_dict(orient="records")
+        return f"成功讀取 {len(df)} 筆資料，已載入系統。"
+    except Exception as e:
+        return f"讀取失敗: {str(e)}"
 
-@mcp.resource("data://config")
-def get_static_fruit_config() -> str:
-    filepath = f"./data_new.csv"
+# --- Tool B: 負責分析資料 ---
+@mcp.tool()
+def analyze_current_data() -> str:
+    """[Tool B] 分析目前載入的資料，並準備 UI 內容。"""
+    if DATA_STORE["raw_data"] is None:
+        return "錯誤：尚未載入任何資料，請先執行 load_data_from_file。"
     
-    fruit_data = {}
-    
-    try:
-        with open(filepath, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # row 會像是 {'item': 'Apples', 'price': '50'}
-                # 我們把它存進一個字典方便查詢
-                fruit_data[row['item'].strip()] = row['price'].strip()
-        
-        # 這裡你可以決定要回傳「全部資料」還是「特定邏輯」
-        # 如果是回傳整份 JSON：
-        return json.dumps(fruit_data, indent=4)
-        
-    except FileNotFoundError:
-        return json.dumps({"error": "File not found"})
+    df = pd.DataFrame(DATA_STORE["raw_data"])
+    # 進行一些簡單分析
+    summary = {
+        "total_items": len(df),
+        "avg_price": df['price'].astype(float).mean(),
+        "max_price": df['price'].astype(float).max()
+    }
+    # 將分析後的結果存起來給 Resource 使用
+    DATA_STORE["analysis_result"] = summary
+    return "分析完成！你可以查看 ui://dashboard 資源來獲取報表。"
 
-@mcp.resource("data://inventory")
-def get_fruit_data() -> str:
-    filepath = "./fruit_price.csv"
-    import csv
-    data = []
-    try:
-        with open(filepath, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                data.append(row)
-        return json.dumps(data)
-    except FileNotFoundError:
-        return json.dumps([])
+# --- Resource: 負責輸出 UI 內容 ---
+@mcp.resource("ui://dashboard")
+def get_analysis_dashboard() -> str:
+    """[Resource] 輸出最終的分析 UI（Markdown 格式）。"""
+    res = DATA_STORE["analysis_result"]
+    
+    if res is None:
+        return "# 儀表板\n目前沒有可顯示的分析數據。請 AI 先執行分析工具。"
+    
+    # 這裡我們用 Markdown 做出一個漂亮的 UI 效果
+    ui_output = f"""
+# 🍎 水果數據分析摘要
+---
+* **總品項數量**: {res['total_items']}
+* **平均價格**: ${res['avg_price']:.2f}
+* **最高單價**: ${res['max_price']:.2f}
+
+> 提示：此數據由 Tool B 自動生成，僅供參考。
+"""
+    return ui_output
 
 if __name__ == "__main__":
-    mcp.run(transport="http", port=8000)
+    # 建議開發時先用 stdio，接入 Claude 較方便；若要用 Inspector 測試 port 也行
+    mcp.run()
